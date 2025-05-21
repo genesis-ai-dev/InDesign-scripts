@@ -117,54 +117,69 @@ if (textFrame.parentStory) {
 }
 
 // === Define Styles ===
-var bookStyle = defineParagraphStyle(doc, 'BookTitle', {
+// Shared style properties
+var sharedStyleProps = {
   appliedFont: 'Times New Roman',
+  justification: Justification.LEFT_JUSTIFIED,
+  hyphenation: false,
+  spaceAfter: 0.1875,
+  alignToBaseline: false,
+  dropCapLines: 2,
+  leading: 13.5
+};
+
+var bookStyle = defineParagraphStyle(doc, 'BookTitle', {
+  appliedFont: sharedStyleProps.appliedFont,
   pointSize: 18,
   leading: 16,
   justification: Justification.CENTER_ALIGN,
-  spaceBefore: 1,
-  spaceAfter: 0.25,
-  alignToBaseline: false,
+  spaceBefore: 0.3125,
+  spaceAfter: 0,
+  alignToBaseline: sharedStyleProps.alignToBaseline,
   capitalization: Capitalization.SMALL_CAPS,
   // spanColumn: 1634495520, // Make book titles span all columns -- can't figure out how to do this from the docs
 });
+
 var verseTextStyle = defineParagraphStyle(doc, 'VerseText', {
-  appliedFont: 'Times New Roman',
+  appliedFont: sharedStyleProps.appliedFont,
   pointSize: 10,
-  leading: 12,
-  justification: Justification.FULLY_JUSTIFIED,
-  hyphenation: false,
-  spaceAfter: 0,
-  alignToBaseline: false,
+  leading: sharedStyleProps.leading,
+  justification: sharedStyleProps.justification,
+  hyphenation: sharedStyleProps.hyphenation,
+  spaceAfter: sharedStyleProps.spaceAfter,
+  alignToBaseline: sharedStyleProps.alignToBaseline,
   dropCapCharacters: 1,
-  dropCapLines: 2,
+  dropCapLines: sharedStyleProps.dropCapLines,
 });
+
 var verseTextStyle2 = defineParagraphStyle(doc, 'VerseTextTwoDigitChapter', {
-  appliedFont: 'Times New Roman',
+  appliedFont: sharedStyleProps.appliedFont,
   pointSize: 10,
-  leading: 12,
-  justification: Justification.FULLY_JUSTIFIED,
-  hyphenation: false,
-  spaceAfter: 0,
-  alignToBaseline: false,
+  leading: sharedStyleProps.leading,
+  justification: sharedStyleProps.justification,
+  hyphenation: sharedStyleProps.hyphenation,
+  spaceAfter: sharedStyleProps.spaceAfter,
+  alignToBaseline: sharedStyleProps.alignToBaseline,
   dropCapCharacters: 2,
-  dropCapLines: 2,
+  dropCapLines: sharedStyleProps.dropCapLines,
 });
+
 var verseTextStyle3 = defineParagraphStyle(doc, 'VerseTextThreeDigitChapter', {
-  appliedFont: 'Times New Roman',
+  appliedFont: sharedStyleProps.appliedFont,
   pointSize: 10,
-  leading: 12,
-  justification: Justification.FULLY_JUSTIFIED,
-  hyphenation: false,
-  spaceAfter: 0,
-  alignToBaseline: false,
+  leading: sharedStyleProps.leading,
+  justification: sharedStyleProps.justification,
+  hyphenation: sharedStyleProps.hyphenation,
+  spaceAfter: sharedStyleProps.spaceAfter,
+  alignToBaseline: sharedStyleProps.alignToBaseline,
   dropCapCharacters: 3,
-  dropCapLines: 2,
+  dropCapLines: sharedStyleProps.dropCapLines,
 });
 var verseNumStyle = defineCharacterStyle(doc, 'VerseNum', {
   position: Position.SUPERSCRIPT,
-  pointSize: 6.5,
+  pointSize: 10,
   appliedFont: 'Times New Roman',
+  fontStyle: 'Bold',
   baselineShift: 2,
 });
 // Add DropCap character style for multi-character drop caps
@@ -234,7 +249,7 @@ for (var i = 0; i < data.length; i++) {
   if (chapter !== prevChapter) {
     story.insertionPoints[-1].contents = '\r';
     // Insert chapter number as plain text (will become drop cap)
-    story.insertionPoints[-1].contents = chapter;
+    story.insertionPoints[-1].contents = chapter + ' ';
 
     // Apply the verse text style first
     story.paragraphs[-1].appliedParagraphStyle = verseTextStyle;
