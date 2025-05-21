@@ -184,8 +184,8 @@ var verseNumStyle = defineCharacterStyle(doc, 'VerseNum', {
 });
 // Add DropCap character style for multi-character drop caps
 var dropCapStyle = defineCharacterStyle(doc, 'DropCap', {
-  tracking: 50, // Adjust as needed for spacing
-  pointSize: 7
+  tracking: 20, // Adjust as needed for spacing
+  pointSize: 10
 });
 
 // === Insert Bible content ===
@@ -266,6 +266,7 @@ for (var i = 0; i < data.length; i++) {
     para.characters.itemByRange(0, chapter.length - 1).appliedCharacterStyle = dropCapStyle;
     // Add extra space before the drop cap paragraph to prevent collision with the line above
     para.spaceBefore = 10; // Adjust this value as needed
+    
 
     prevChapter = chapter;
   }
@@ -284,10 +285,19 @@ for (var i = 0; i < data.length; i++) {
         ip.contents = verse;
         // Apply verse number style to all characters in the verse number
         var verseLength = verse.length; // Store the actual length of the verse number
-        story.characters.itemByRange(
-          story.characters[verseStartIndex],
-          story.characters[verseStartIndex + verseLength - 1]
-        ).appliedCharacterStyle = verseNumStyle;
+        if (verse !== '1') {
+          story.characters.itemByRange(
+            story.characters[verseStartIndex],
+            story.characters[verseStartIndex + verseLength - 1]
+          ).appliedCharacterStyle = verseNumStyle;
+        } else {
+          // remove the first character of the verse text
+          story.characters.itemByRange(
+            story.characters[verseStartIndex],
+            story.characters[verseStartIndex + verse.length - 1]
+          ).remove();
+
+        }
       }
     }
 
@@ -309,10 +319,19 @@ for (var i = 0; i < data.length; i++) {
         ).appliedCharacterStyle = doc.characterStyles.itemByName('[None]');
 
         // Re-apply verse number style to ensure it stays styled correctly
-        story.characters.itemByRange(
-          story.characters[verseStartIndex],
-          story.characters[verseStartIndex + verse.length - 1]
-        ).appliedCharacterStyle = verseNumStyle;
+        if (verse !== '1') {
+          story.characters.itemByRange(
+            story.characters[verseStartIndex],
+            story.characters[verseStartIndex + verse.length - 1]
+          ).appliedCharacterStyle = verseNumStyle;
+        } else {
+          // remove the first character of the verse text
+          story.characters.itemByRange(
+            story.characters[verseStartIndex],
+            story.characters[verseStartIndex + verse.length - 1]
+          ).remove();
+
+        }
       }
     } else {
       // For verse 1 of each chapter, ensure all text has no character style
