@@ -393,3 +393,46 @@ function ensureOverriddenLabeledFrame(page, label) {
   }
   return null;
 }
+
+// === Add running headers for each chapter ===
+for (var p = 0; p < doc.pages.length; p++) {
+  var page = doc.pages[p];
+  var headerFrame = null;
+  var items = page.allPageItems;
+  for (var i = 0; i < items.length; i++) {
+    var tf = items[i];
+    if (tf.constructor && tf.constructor.name === 'TextFrame' && tf.label === 'BibleHeader') {
+      headerFrame = tf;
+      break;
+    }
+  }
+  if (!headerFrame) continue;
+
+  // Find the last chapter number up to this page
+  var lastChapter = '';
+  var story = null;
+  for (var s = 0; s < doc.stories.length; s++) {
+    story = doc.stories[s];
+    for (var j = 0; j < story.paragraphs.length; j++) {
+      var para = story.paragraphs[j];
+      if (para.appliedParagraphStyle.name.indexOf('VerseText') === 0) {
+        // Check if this paragraph starts with a number (chapter)
+        var match = para.contents.match(/^(\d+)/);
+        if (match) {
+          // Check if this paragraph is on or before this page
+          if (para.characters.length > 0 && para.characters[0].parentTextFrames.length > 0) {
+            var paraPage = para.characters[0].parentTextFrames[0].parentPage;
+            if (paraPage && paraPage.documentOffset <= page.documentOffset) {
+              lastChapter = match[1];
+            }
+          }
+        }
+      }
+    }
+  }
+  if (lastChapter) {
+    headerFrame.contents = 'Chapter ' + lastChapter;
+  } else {
+    headerFrame.contents = '';
+  }
+}
