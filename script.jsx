@@ -167,6 +167,11 @@ var verseNumStyle = defineCharacterStyle(doc, 'VerseNum', {
   appliedFont: 'Times New Roman',
   baselineShift: 2,
 });
+// Add DropCap character style for multi-character drop caps
+var dropCapStyle = defineCharacterStyle(doc, 'DropCap', {
+  tracking: 50, // Adjust as needed for spacing
+  pointSize: 7
+});
 
 // === Insert Bible content ===
 var prevBook = '', prevChapter = '';
@@ -240,6 +245,12 @@ for (var i = 0; i < data.length; i++) {
     } else if (chapter.length === 3) {
       story.paragraphs[-1].appliedParagraphStyle = verseTextStyle3;
     }
+
+    // Apply DropCap style to the chapter number
+    var para = story.paragraphs[-1];
+    para.characters.itemByRange(0, chapter.length - 1).appliedCharacterStyle = dropCapStyle;
+    // Add extra space before the drop cap paragraph to prevent collision with the line above
+    para.spaceBefore = 10; // Adjust this value as needed
 
     prevChapter = chapter;
   }
