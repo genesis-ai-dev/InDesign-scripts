@@ -82,11 +82,16 @@ if (!page) {
 
 // === OVERRIDE FRAMES FIRST TO ENSURE BIBLEBODY EXISTS ===
 (function () {
-  var LABELS = ['BibleBody'];
+  var LABELS = ['BibleBody', 'BibleHeader'];
   for (var l = 0; l < LABELS.length; l++) {
     ensureOverriddenLabeledFrame(page, LABELS[l]);
   }
 })();
+
+// Override BibleHeader frames on all pages
+for (var p = 0; p < doc.pages.length; p++) {
+  ensureOverriddenLabeledFrame(doc.pages[p], 'BibleHeader');
+}
 
 // Find the first BibleBody frame on the first page
 var textFrame = null;
@@ -196,6 +201,13 @@ var malformedChapterVerseCount = 0;
 var errorProcessingCount = 0;
 var successCount = 0;
 
+var debugLog = [];
+function log(message) {
+  debugLog.push(message);
+  // Uncomment if using ExtendScript Toolkit
+  // $.writeln(message);
+}
+
 for (var i = 0; i < data.length; i++) {
   var entry = data[i];
   if (!entry.id || !entry.translation) {
@@ -237,8 +249,8 @@ for (var i = 0; i < data.length; i++) {
     story.paragraphs[-1].appliedParagraphStyle = bookStyle;
     // Reset character style for the book title paragraph
     story.characters.itemByRange(story.paragraphs[-1].characters[0], story.paragraphs[-1].characters[-1]).appliedCharacterStyle = doc.characterStyles.itemByName('[None]');
-    // Insert a paragraph break to start a new paragraph for the next content
-    story.insertionPoints[-1].contents = '\r';
+    // Insert a space to start a new paragraph for the next content and to ensure book name styles are applied
+    story.insertionPoints[-1].contents = ' ';
     // Set the style of the new (empty) paragraph to VerseText
     story.paragraphs[-1].appliedParagraphStyle = verseTextStyle;
     prevBook = book;
@@ -290,14 +302,7 @@ for (var i = 0; i < data.length; i++) {
             story.characters[verseStartIndex],
             story.characters[verseStartIndex + verseLength - 1]
           ).appliedCharacterStyle = verseNumStyle;
-        } else {
-          // remove the first character of the verse text
-          story.characters.itemByRange(
-            story.characters[verseStartIndex],
-            story.characters[verseStartIndex + verse.length - 1]
-          ).remove();
-
-        }
+        } 
       }
     }
 
@@ -416,16 +421,29 @@ function ensureOverriddenLabeledFrame(page, label) {
 // === Add running headers for each chapter ===
 for (var p = 0; p < doc.pages.length; p++) {
   var page = doc.pages[p];
+  // remove all double newlines
+  log("Processing page " + (p+1));
+  
   var headerFrame = null;
   var items = page.allPageItems;
+  log("Page " + (p+1) + " has " + items.length + " items");
+  
   for (var i = 0; i < items.length; i++) {
     var tf = items[i];
-    if (tf.constructor && tf.constructor.name === 'TextFrame' && tf.label === 'BibleHeader') {
-      headerFrame = tf;
-      break;
+    if (tf.constructor && tf.constructor.name === 'TextFrame') {
+      log("Found TextFrame with label: " + tf.label);
+      if (tf.label === 'BibleHeader') {
+        headerFrame = tf;
+        log("Found BibleHeader frame on page " + (p+1));
+        break;
+      }
     }
   }
-  if (!headerFrame) continue;
+  
+  if (!headerFrame) {
+    log("No BibleHeader frame found on page " + (p+1));
+    continue;
+  }
 
   // Find the last chapter number up to this page
   var lastChapter = '';
@@ -455,3 +473,6 @@ for (var p = 0; p < doc.pages.length; p++) {
     headerFrame.contents = '';
   }
 }
+
+// At the end of your script, display the log
+alert(debugLog.join("\n"));
