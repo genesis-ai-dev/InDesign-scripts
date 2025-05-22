@@ -81,12 +81,12 @@ if (!page) {
 }
 
 // === OVERRIDE FRAMES FIRST TO ENSURE BIBLEBODY EXISTS ===
-(function () {
-  var LABELS = ['BibleBody', 'BibleHeader'];
-  for (var l = 0; l < LABELS.length; l++) {
-    ensureOverriddenLabeledFrame(page, LABELS[l]);
-  }
-})();
+// (function () {
+//   var LABELS = ['BibleBody', 'BibleHeader'];
+//   for (var l = 0; l < LABELS.length; l++) {
+//     ensureOverriddenLabeledFrame(page, LABELS[l]);
+//   }
+// })();
 
 // Override BibleHeader frames on all pages
 for (var p = 0; p < doc.pages.length; p++) {
@@ -384,6 +384,67 @@ for (var i = 0; i < frames.length - 1; i++) {
   }
 }
 
+// Check for overflow and create new pages as needed
+var lastFrame = frames[frames.length - 1] || textFrame;
+var maxNewPages = 1000; // Safety limit to prevent infinite loops
+var pagesAdded = 0;
+
+// Keep adding pages until no more overflow or we hit our safety limit
+while (pagesAdded < maxNewPages) {
+  // Force recomposition to correctly detect overflow
+  app.activeDocument.recompose();
+  
+  // Check if we still have overflow
+  if (!lastFrame.overflows) {
+    log("All content fits - no more pages needed");
+    break;
+  }
+  
+  log("Content overflow detected - creating new spread");
+  
+  // Create two new pages (a spread) at the end of the document
+  var leftPage = doc.pages.add(LocationOptions.AFTER, doc.pages[-1]);
+  var rightPage = doc.pages.add(LocationOptions.AFTER, leftPage);
+  pagesAdded += 2;
+  
+  // Override BibleBody frame on left page
+  var leftFrame = ensureOverriddenLabeledFrame(leftPage, 'BibleBody');
+  if (!leftFrame) {
+    log("Failed to create BibleBody frame on left page");
+    break;
+  }
+  
+  // Override BibleHeader frame on left page
+  ensureOverriddenLabeledFrame(leftPage, 'BibleHeader');
+  
+  // Connect the previous last frame to the new left frame
+  lastFrame.nextTextFrame = leftFrame;
+  
+  // Override BibleBody frame on right page
+  var rightFrame = ensureOverriddenLabeledFrame(rightPage, 'BibleBody');
+  if (!rightFrame) {
+    log("Failed to create BibleBody frame on right page");
+    break;
+  }
+  
+  // Override BibleHeader frame on right page
+  ensureOverriddenLabeledFrame(rightPage, 'BibleHeader');
+  
+  // Connect left frame to right frame
+  leftFrame.nextTextFrame = rightFrame;
+  
+  // Update lastFrame for next iteration
+  lastFrame = rightFrame;
+  
+  // Add the new frames to our frames array
+  frames.push(leftFrame);
+  frames.push(rightFrame);
+}
+
+if (pagesAdded >= maxNewPages) {
+  log("WARNING: Reached maximum page limit. Content may still be overflowing.");
+}
+
 // === Utility: Frame override logic ===
 function findLabeledFrame(page, label) {
   var items = page.allPageItems;
@@ -397,7 +458,7 @@ function getMasterPageForDocPage(docPage) {
   var master = docPage.appliedMaster;
   if (!master) return null;
   if (master.pages.length === 1) return master.pages[0];
-  var isLeft = (docPage.side && docPage.side === PageSideOptions.LEFT_HAND) || (docPage.documentOffset % 2 === 0);
+  var isLeft = (docPage.side && docPage.side === PageSideOptions.LEFT_HAND) /* || (docPage.documentOffset % 2 === 0) */;
   return master.pages[isLeft ? 0 : 1];
 }
 function ensureOverriddenLabeledFrame(page, label) {
