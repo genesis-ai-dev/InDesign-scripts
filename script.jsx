@@ -430,6 +430,9 @@ while (pagesAdded < maxNewPages) {
   // Override BibleHeader frame on right page
   ensureOverriddenLabeledFrame(rightPage, 'BibleHeader');
   
+  // Override BibleFooter frame on right page
+  ensureOverriddenLabeledFrame(rightPage, 'BibleFooter');
+  
   // Connect left frame to right frame
   leftFrame.nextTextFrame = rightFrame;
   
@@ -533,6 +536,23 @@ for (var p = 0; p < doc.pages.length; p++) {
   } else {
     headerFrame.contents = '';
   }
+}
+
+// === Add page numbers to BibleFooter frames ===
+for (var p = 0; p < doc.pages.length; p++) {
+  var page = doc.pages[p];
+  log("Processing footer for page " + (p+1));
+  
+  // Ensure the BibleFooter frame is overridden
+  var footerFrame = ensureOverriddenLabeledFrame(page, 'BibleFooter');
+  
+  if (!footerFrame) {
+    log("No BibleFooter frame found on page " + (p+1));
+    continue;
+  }
+
+  // Add the page number to the footer
+  footerFrame.contents = String(p + 1); // Adding 1 since pages are 0-indexed
 }
 
 // At the end of your script, display the log
