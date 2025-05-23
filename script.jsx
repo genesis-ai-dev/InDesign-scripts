@@ -461,7 +461,7 @@ function getMasterPageForDocPage(docPage) {
   var master = docPage.appliedMaster;
   if (!master) return null;
   if (master.pages.length === 1) return master.pages[0];
-  var isLeft = (docPage.side && docPage.side === PageSideOptions.LEFT_HAND) /* || (docPage.documentOffset % 2 === 0) */;
+  var isLeft = (docPage.side && docPage.side === PageSideOptions.LEFT_HAND);
   return master.pages[isLeft ? 0 : 1];
 }
 function ensureOverriddenLabeledFrame(page, label) {
@@ -485,63 +485,130 @@ function ensureOverriddenLabeledFrame(page, label) {
 // === Add running headers for each chapter ===
 for (var p = 0; p < doc.pages.length; p++) {
   var page = doc.pages[p];
+  // var elements = page.getElements();
+
+  // for (var i = 0; i < elements.length; i++) {
+  //   var element = elements[i];
+  //   log("element = " + element);
+  // }
   // remove all double newlines
-  log("Processing page " + (p+1));
+  // log("Processing page " + (p+1));
   
   var headerFrame = null;
   var items = page.allPageItems;
-  log("Page " + (p+1) + " has " + items.length + " items");
+  // log("Page " + (p+1) + " has " + items.length + " items");
   
   for (var i = 0; i < items.length; i++) {
     var tf = items[i];
     if (tf.constructor && tf.constructor.name === 'TextFrame') {
-      log("Found TextFrame with label: " + tf.label);
+      // log("Found TextFrame with label: " + tf.label);
       if (tf.label === 'BibleHeader') {
         headerFrame = tf;
-        log("Found BibleHeader frame on page " + (p+1));
+        // log("Found BibleHeader frame on page " + (p+1));
         break;
       }
     }
   }
   
   if (!headerFrame) {
-    log("No BibleHeader frame found on page " + (p+1));
+    // log("No BibleHeader frame found on page " + (p+1));
     continue;
   }
-
-  // Find the last chapter number up to this page
-  var lastChapter = '';
-  var story = null;
-  for (var s = 0; s < doc.stories.length; s++) {
-    story = doc.stories[s];
-    for (var j = 0; j < story.paragraphs.length; j++) {
-      var para = story.paragraphs[j];
-      if (para.appliedParagraphStyle.name.indexOf('VerseText') === 0) {
-        // Check if this paragraph starts with a number (chapter)
-        var match = para.contents.match(/^(\d+)/);
-        if (match) {
-          // Check if this paragraph is on or before this page
-          if (para.characters.length > 0 && para.characters[0].parentTextFrames.length > 0) {
-            var paraPage = para.characters[0].parentTextFrames[0].parentPage;
-            if (paraPage && paraPage.documentOffset <= page.documentOffset) {
-              lastChapter = match[1];
+  var isLeft = (page.side && page.side === PageSideOptions.LEFT_HAND);
+  log("isLeft = " + isLeft);
+  if (!isLeft) {
+    // Find the last chapter number up to this page
+    var lastChapter = '';
+    var story = null;
+    for (var s = 0; s < doc.stories.length; s++) {
+      story = doc.stories[s];
+      for (var j = 0; j < story.paragraphs.length; j++) {
+        var para = story.paragraphs[j];
+        if (para.appliedParagraphStyle.name.indexOf('VerseText') === 0) {
+          // Check if this paragraph starts with a number (chapter)
+          var match = para.contents.match(/^(\d+)/);
+          log("match = " + para.contents);
+          if (match) {
+            // Check if this paragraph is on or before this page
+            if (para.characters.length > 0 && para.characters[0].parentTextFrames.length > 0) {
+              var paraPage = para.characters[0].parentTextFrames[0].parentPage;
+              if (paraPage && paraPage.documentOffset <= page.documentOffset) {
+                lastChapter = match[1];
+              }
             }
           }
         }
       }
     }
-  }
-  if (lastChapter) {
-    headerFrame.contents = 'Chapter ' + lastChapter;
+    if (lastChapter) {
+      headerFrame.contents = 'Chapter ' + lastChapter;
+    } else {
+      headerFrame.contents = '';
+    }
   } else {
-    headerFrame.contents = '';
+    var firstChapter = '';
+    // var story = null;
+
+    // log("doc.stories = " + doc.stories.length);
+    // var story = doc.stories[1];
+    // log("story.paragraphs.length = " + story.paragraphs.length);
+    // var firstChapter = '';
+
+    // for (var j = 0; j < story.paragraphs.length; j++) {
+    //   var para = story.paragraphs[j];
+    //   log("para = " + para.contents);
+    //   if (para.appliedParagraphStyle.name.indexOf('VerseText') === 0) {
+    //     var match = para.contents.match(/^(\d+)/);
+    //     log("match = " + match);
+    //     if (match) {
+    //       firstChapter = match[1];
+    //       break;
+    //     }
+    //   }
+    // }
+    for (var i = 0; i < page.textFrames.length; i++) {
+      var tf = page.textFrames[i];
+      if (tf.paragraphs.length > 0) {
+          var firstPara = tf.paragraphs[0];
+          firstChapter = firstPara.contents.match(/^(\d+)/)
+          log("First paragraph in text frame " + i + ": " + firstPara.contents);
+          // You can now work with 'firstPara' as needed
+      }
   }
+    // for (var s = 0; s < doc.stories.length; s++) {
+    //   story = doc.stories[s];
+    //   log("story  in loop = " + story.name);
+    //   for (var j = 0; j < story.paragraphs.length; j++) {
+    //     var para = story.paragraphs[j];
+    //     if (para.appliedParagraphStyle.name.indexOf('VerseText') === 0) {
+    //       // Check if this paragraph starts with a number (chapter)
+    //       var match = para.contents.match(/^(\d+)/);
+    //       if (match) {
+    //         // Check if this paragraph is on or before this page
+    //         if (para.characters.length > 0 && para.characters[0].parentTextFrames.length > 0) {
+    //           var paraPage = para.characters[0].parentTextFrames[0].parentPage;
+    //           if (paraPage && paraPage.documentOffset <= page.documentOffset) {
+    //             firstChapter = match[1];
+    //           }
+    //         }
+    //       }
+    //     }
+    //   }
+    // }
+    // log("story final = " + story.name);
+    if (firstChapter) {
+      headerFrame.contents = 'Chapter ' + firstChapter;
+    } else {
+      headerFrame.contents = '';
+    }
+  }
+
 }
 
 // === Add page numbers to BibleFooter frames ===
 for (var p = 0; p < doc.pages.length; p++) {
   var page = doc.pages[p];
-  log("Processing footer for page " + (p+1));
+  // log("Processing footer for page " + (p+1));
   
   // Ensure the BibleFooter frame is overridden
   var footerFrame = ensureOverriddenLabeledFrame(page, 'BibleFooter');
