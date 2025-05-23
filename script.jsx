@@ -478,11 +478,37 @@ for (var s = 0; s < doc.stories.length; s++) {
     
     // Check for chapter start
     if (styleName.indexOf('VerseText') === 0) {
-      var chapterStartWords = /^\s*(In|Long|Na|Ol|Em|God|Jisas|Man|Woman|Nau|Taim|Wanpela)/i;
-      var chapterMatch = content.match(/^(\d+)\s+(.+)/);
+      // Check if this paragraph has drop cap formatting (which indicates chapter start)
+      // Chapter starts are identified by having dropCapCharacters > 0
+      var isChapterStart = false;
+      var chapterNumber = '';
       
-      if (chapterMatch && chapterMatch[2].match(chapterStartWords)) {
-        currentChapter = chapterMatch[1];
+      try {
+        // Check if this paragraph style has drop cap settings
+        var paraStyle = para.appliedParagraphStyle;
+        if (paraStyle.dropCapCharacters > 0) {
+          // This is a chapter start - extract the chapter number from the beginning
+          var chapterMatch = content.match(/^(\d+)/);
+          if (chapterMatch) {
+            chapterNumber = chapterMatch[1];
+            isChapterStart = true;
+            log("Sequential analysis: Detected chapter start by drop cap: " + chapterNumber);
+          }
+        }
+      } catch (e) {
+        // Fallback to text-based detection if drop cap check fails
+        var chapterStartWords = /^\s*(In|Long|Na|Ol|Em|God|Jisas|Man|Woman|Nau|Taim|Wanpela|Mi|Bihaen|Na)/i;
+        var chapterMatch = content.match(/^(\d+)\s+(.+)/);
+        
+        if (chapterMatch && chapterMatch[2].match(chapterStartWords)) {
+          chapterNumber = chapterMatch[1];
+          isChapterStart = true;
+          log("Sequential analysis: Detected chapter start by text pattern: " + chapterNumber);
+        }
+      }
+      
+      if (isChapterStart) {
+        currentChapter = chapterNumber;
         log("Sequential analysis: Set chapter to " + currentChapter);
         
         // This paragraph contains chapter start (verse 1)
