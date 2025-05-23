@@ -482,133 +482,217 @@ function ensureOverriddenLabeledFrame(page, label) {
   return null;
 }
 
-// === Add running headers for each chapter ===
-for (var p = 0; p < doc.pages.length; p++) {
-  var page = doc.pages[p];
-  // var elements = page.getElements();
-
-  // for (var i = 0; i < elements.length; i++) {
-  //   var element = elements[i];
-  //   log("element = " + element);
-  // }
-  // remove all double newlines
-  // log("Processing page " + (p+1));
+// === Function to find verse reference from text content ===
+function parseVerseReference(content, styleName) {
+  // For BookTitle style, extract book name
+  if (styleName === 'BookTitle') {
+    var bookName = String(content).replace(/\r$/, '').replace(/\n$/, '');
+    return {
+      type: 'book',
+      book: bookName
+    };
+  }
   
-  var headerFrame = null;
-  var items = page.allPageItems;
-  // log("Page " + (p+1) + " has " + items.length + " items");
-  
-  for (var i = 0; i < items.length; i++) {
-    var tf = items[i];
-    if (tf.constructor && tf.constructor.name === 'TextFrame') {
-      // log("Found TextFrame with label: " + tf.label);
-      if (tf.label === 'BibleHeader') {
-        headerFrame = tf;
-        // log("Found BibleHeader frame on page " + (p+1));
-        break;
+  // For VerseText styles, parse chapter and verse information
+  if (styleName.indexOf('VerseText') === 0) {
+    // Look for content that starts with a number
+    var match = content.match(/^(\d+)(.*)$/);
+    if (match) {
+      var number = match[1];
+      var restOfContent = match[2];
+      
+      // Check if this looks like a chapter start:
+      // - Should have substantial text after the number
+      // - Usually starts with a space and capital letter
+      // - Should be the start of a story/narrative
+      if (restOfContent.match(/^\s+[A-Z][a-z]/)) {
+        return {
+          type: 'chapter_start',
+          chapter: number,
+          verse: '1'
+        };
+      } else {
+        // This is a regular verse number
+        return {
+          type: 'verse',
+          verse: number
+        };
       }
     }
   }
   
-  if (!headerFrame) {
-    // log("No BibleHeader frame found on page " + (p+1));
-    continue;
+  return null;
+}
+
+// === Add running headers with proper verse ranges ===
+// First, build a global context map by walking through all content
+var globalContext = {
+  currentBook: '',
+  currentChapter: '',
+  paragraphMap: [] // Array of {para: paragraph, book: string, chapter: string, verse: string}
+};
+
+// Walk through all BibleBody content to build context
+log("=== Building global context map ===");
+for (var s = 0; s < doc.stories.length; s++) {
+  var story = doc.stories[s];
+  for (var p = 0; p < story.paragraphs.length; p++) {
+    var para = story.paragraphs[p];
+    var styleName = para.appliedParagraphStyle.name;
+    var content = String(para.contents);
+    
+    // Skip empty paragraphs
+    if (!content || content === '' || content === '\r' || content === '\n' || content === '\r\n') {
+      continue;
+    }
+    
+    var ref = parseVerseReference(content, styleName);
+    if (ref) {
+      if (ref.type === 'book') {
+        globalContext.currentBook = ref.book;
+        log("Global context: Set book to " + globalContext.currentBook);
+      } else if (ref.type === 'chapter_start') {
+        globalContext.currentChapter = ref.chapter;
+        log("Global context: Set chapter to " + globalContext.currentChapter);
+        
+        globalContext.paragraphMap.push({
+          para: para,
+          book: globalContext.currentBook,
+          chapter: globalContext.currentChapter,
+          verse: '1'
+        });
+      } else if (ref.type === 'verse') {
+        globalContext.paragraphMap.push({
+          para: para,
+          book: globalContext.currentBook,
+          chapter: globalContext.currentChapter,
+          verse: ref.verse
+        });
+      }
+    }
   }
-  var isLeft = (page.side && page.side === PageSideOptions.LEFT_HAND);
-  log("isLeft = " + isLeft);
-  if (!isLeft) {
-    // Find the last chapter number up to this page
-    var lastChapter = '';
-    var story = null;
-    for (var s = 0; s < doc.stories.length; s++) {
-      story = doc.stories[s];
-      for (var j = 0; j < story.paragraphs.length; j++) {
-        var para = story.paragraphs[j];
-        if (para.appliedParagraphStyle.name.indexOf('VerseText') === 0) {
-          // Check if this paragraph starts with a number (chapter)
-          var match = para.contents.match(/^(\d+)/);
-          log("match = " + para.contents);
-          if (match) {
-            // Check if this paragraph is on or before this page
-            if (para.characters.length > 0 && para.characters[0].parentTextFrames.length > 0) {
-              var paraPage = para.characters[0].parentTextFrames[0].parentPage;
-              if (paraPage && paraPage.documentOffset <= page.documentOffset) {
-                lastChapter = match[1];
-              }
-            }
+}
+
+log("Built context map with " + globalContext.paragraphMap.length + " verse entries");
+
+// === Function to format verse reference for header ===
+function formatVerseReference(ref) {
+  if (!ref) return '';
+  if (ref.book && ref.chapter && ref.verse) {
+    return ref.book + ' ' + ref.chapter + ':' + ref.verse;
+  } else if (ref.book && ref.chapter) {
+    return ref.book + ' ' + ref.chapter;
+  } else if (ref.book) {
+    return ref.book;
+  }
+  return '';
+}
+
+// Function to get verse range for a page using global context
+function getPageVerseRangeFromContext(page) {
+  var firstVerse = null;
+  var lastVerse = null;
+  
+  log("=== Analyzing page " + (page.documentOffset + 1) + " using global context ===");
+  
+  // Find all paragraphs on this page
+  var pageFrames = [];
+  var items = page.allPageItems;
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].constructor.name === 'TextFrame' && items[i].label === 'BibleBody') {
+      pageFrames.push(items[i]);
+    }
+  }
+  
+  // Check each paragraph in our context map to see if it's on this page
+  for (var i = 0; i < globalContext.paragraphMap.length; i++) {
+    var entry = globalContext.paragraphMap[i];
+    var para = entry.para;
+    
+    // Check if this paragraph is on the current page
+    try {
+      if (para.characters.length > 0) {
+        var paraFrame = para.characters[0].parentTextFrames[0];
+        if (paraFrame && paraFrame.parentPage === page) {
+          var verseRef = {
+            book: entry.book,
+            chapter: entry.chapter,
+            verse: entry.verse
+          };
+          
+          if (!firstVerse) {
+            firstVerse = verseRef;
+            log("Found first verse on page: " + formatVerseReference(firstVerse));
           }
+          lastVerse = verseRef;
+          log("Found verse on page: " + formatVerseReference(lastVerse));
         }
       }
+    } catch (e) {
+      // Skip paragraphs that can't be checked
     }
-    if (lastChapter) {
-      headerFrame.contents = 'Chapter ' + lastChapter;
+  }
+  
+  log("Page analysis complete. First: " + formatVerseReference(firstVerse) + ", Last: " + formatVerseReference(lastVerse));
+  
+  return {
+    first: firstVerse,
+    last: lastVerse
+  };
+}
+
+// Process pages in pairs (spreads) for proper left/right header logic
+for (var p = 0; p < doc.pages.length; p += 2) {
+  var leftPage = doc.pages[p];
+  var rightPage = (p + 1 < doc.pages.length) ? doc.pages[p + 1] : null;
+  
+  log("=== Processing spread: pages " + (p + 1) + " and " + (rightPage ? (p + 2) : "none") + " ===");
+  
+  // Get verse ranges for both pages using global context
+  var leftRange = getPageVerseRangeFromContext(leftPage);
+  var rightRange = rightPage ? getPageVerseRangeFromContext(rightPage) : null;
+  
+  // Determine the spread's verse range
+  var spreadFirstVerse = leftRange.first;
+  var spreadLastVerse = rightRange && rightRange.last ? rightRange.last : leftRange.last;
+  
+  log("Spread first verse: " + formatVerseReference(spreadFirstVerse));
+  log("Spread last verse: " + formatVerseReference(spreadLastVerse));
+  
+  // Set left page header (first verse of spread)
+  var leftHeaderFrame = ensureOverriddenLabeledFrame(leftPage, 'BibleHeader');
+  if (leftHeaderFrame) {
+    if (spreadFirstVerse) {
+      var leftHeaderText = formatVerseReference(spreadFirstVerse);
+      leftHeaderFrame.contents = leftHeaderText;
+      log("Set left header to: '" + leftHeaderText + "'");
     } else {
-      headerFrame.contents = '';
+      log("No first verse found for left header");
     }
   } else {
-    var firstChapter = '';
-    // var story = null;
-
-    // log("doc.stories = " + doc.stories.length);
-    // var story = doc.stories[1];
-    // log("story.paragraphs.length = " + story.paragraphs.length);
-    // var firstChapter = '';
-
-    // for (var j = 0; j < story.paragraphs.length; j++) {
-    //   var para = story.paragraphs[j];
-    //   log("para = " + para.contents);
-    //   if (para.appliedParagraphStyle.name.indexOf('VerseText') === 0) {
-    //     var match = para.contents.match(/^(\d+)/);
-    //     log("match = " + match);
-    //     if (match) {
-    //       firstChapter = match[1];
-    //       break;
-    //     }
-    //   }
-    // }
-    for (var i = 0; i < page.textFrames.length; i++) {
-      var tf = page.textFrames[i];
-      if (tf.paragraphs.length > 0) {
-          var firstPara = tf.paragraphs[0];
-          firstChapter = firstPara.contents.match(/^(\d+)/)
-          log("First paragraph in text frame " + i + ": " + firstPara.contents);
-          // You can now work with 'firstPara' as needed
-      }
+    log("No left header frame found");
   }
-    // for (var s = 0; s < doc.stories.length; s++) {
-    //   story = doc.stories[s];
-    //   log("story  in loop = " + story.name);
-    //   for (var j = 0; j < story.paragraphs.length; j++) {
-    //     var para = story.paragraphs[j];
-    //     if (para.appliedParagraphStyle.name.indexOf('VerseText') === 0) {
-    //       // Check if this paragraph starts with a number (chapter)
-    //       var match = para.contents.match(/^(\d+)/);
-    //       if (match) {
-    //         // Check if this paragraph is on or before this page
-    //         if (para.characters.length > 0 && para.characters[0].parentTextFrames.length > 0) {
-    //           var paraPage = para.characters[0].parentTextFrames[0].parentPage;
-    //           if (paraPage && paraPage.documentOffset <= page.documentOffset) {
-    //             firstChapter = match[1];
-    //           }
-    //         }
-    //       }
-    //     }
-    //   }
-    // }
-    // log("story final = " + story.name);
-    if (firstChapter) {
-      headerFrame.contents = 'Chapter ' + firstChapter;
+  
+  // Set right page header (last verse of spread)
+  if (rightPage) {
+    var rightHeaderFrame = ensureOverriddenLabeledFrame(rightPage, 'BibleHeader');
+    if (rightHeaderFrame) {
+      if (spreadLastVerse) {
+        var rightHeaderText = formatVerseReference(spreadLastVerse);
+        rightHeaderFrame.contents = rightHeaderText;
+        log("Set right header to: '" + rightHeaderText + "'");
+      } else {
+        log("No last verse found for right header");
+      }
     } else {
-      headerFrame.contents = '';
+      log("No right header frame found");
     }
   }
-
 }
 
 // === Add page numbers to BibleFooter frames ===
 for (var p = 0; p < doc.pages.length; p++) {
   var page = doc.pages[p];
-  // log("Processing footer for page " + (p+1));
   
   // Ensure the BibleFooter frame is overridden
   var footerFrame = ensureOverriddenLabeledFrame(page, 'BibleFooter');
