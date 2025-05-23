@@ -211,14 +211,12 @@ function log(message) {
 for (var i = 0; i < data.length; i++) {
   var entry = data[i];
   if (!entry.id || !entry.translation) {
-    // alert('Missing id or translation at entry ' + i);
     missingFieldCount++;
     continue;
   }
   // Handle multi-word book names (e.g., "1 Corinthians", "3 John")
   var idParts = entry.id.split(' ');
   if (idParts.length < 2) {
-    // alert('Malformed id at entry ' + i + ': ' + entry.id);
     malformedIdCount++;
     continue;
   }
@@ -448,6 +446,157 @@ if (pagesAdded >= maxNewPages) {
   log("WARNING: Reached maximum page limit. Content may still be overflowing.");
 }
 
+// === Add running headers with proper verse ranges ===
+// Walk through all content sequentially to build a page-to-verse map with proper context
+var pageVerseMap = {}; // pageIndex -> {verses: [{book, chapter, verse}], firstVerse, lastVerse}
+var currentBook = '';
+var currentChapter = '';
+
+log("=== Building page-to-verse map by walking through content sequentially ===");
+
+// Walk through all stories and paragraphs sequentially
+for (var s = 0; s < doc.stories.length; s++) {
+  var story = doc.stories[s];
+  
+  for (var p = 0; p < story.paragraphs.length; p++) {
+    var para = story.paragraphs[p];
+    var styleName = para.appliedParagraphStyle.name;
+    var content = String(para.contents);
+    
+    // Skip empty paragraphs
+    if (!content || content === '' || content === '\r' || content === '\n' || content === '\r\n') {
+      continue;
+    }
+    
+    // Check for book title
+    if (styleName === 'BookTitle') {
+      var bookName = content.replace(/\r$/, '').replace(/\n$/, '');
+      currentBook = bookName;
+      log("Sequential analysis: Set book to " + currentBook);
+      continue;
+    }
+    
+    // Check for chapter start
+    if (styleName.indexOf('VerseText') === 0) {
+      var chapterStartWords = /^\s*(In|Long|Na|Ol|Em|God|Jisas|Man|Woman|Nau|Taim|Wanpela)/i;
+      var chapterMatch = content.match(/^(\d+)\s+(.+)/);
+      
+      if (chapterMatch && chapterMatch[2].match(chapterStartWords)) {
+        currentChapter = chapterMatch[1];
+        log("Sequential analysis: Set chapter to " + currentChapter);
+        
+        // This paragraph contains chapter start (verse 1)
+        // Find which page this paragraph is on
+        try {
+          if (para.characters.length > 0) {
+            var paraFrame = para.characters[0].parentTextFrames[0];
+            if (paraFrame && paraFrame.parentPage) {
+              var pageIndex = paraFrame.parentPage.documentOffset;
+              
+              if (!pageVerseMap[pageIndex]) {
+                pageVerseMap[pageIndex] = {verses: [], firstVerse: null, lastVerse: null};
+              }
+              
+              var verseRef = {
+                book: currentBook,
+                chapter: currentChapter,
+                verse: '1'
+              };
+              
+              pageVerseMap[pageIndex].verses.push(verseRef);
+              if (!pageVerseMap[pageIndex].firstVerse) {
+                pageVerseMap[pageIndex].firstVerse = verseRef;
+              }
+              pageVerseMap[pageIndex].lastVerse = verseRef;
+              
+              log("Sequential analysis: Added " + formatVerseReference(verseRef) + " to page " + (pageIndex + 1));
+            }
+          }
+        } catch (e) {
+          // Skip if can't determine page
+        }
+      }
+      
+      // Now look for individual verse numbers in this paragraph
+      try {
+        for (var i = 0; i < para.characters.length; i++) {
+          var character = para.characters[i];
+          var charContent = String(character.contents);
+          
+          // Check if this character has superscript formatting (verse number)
+          if (character.appliedCharacterStyle && character.appliedCharacterStyle.name === 'VerseNum') {
+            // Collect the full verse number
+            var verseNum = charContent;
+            var j = i + 1;
+            
+            // Collect consecutive superscript digits for multi-digit verse numbers
+            while (j < para.characters.length) {
+              var nextChar = para.characters[j];
+              if (nextChar.appliedCharacterStyle && 
+                  nextChar.appliedCharacterStyle.name === 'VerseNum' &&
+                  /\d/.test(String(nextChar.contents))) {
+                verseNum += String(nextChar.contents);
+                j++;
+              } else {
+                break;
+              }
+            }
+            
+            if (/^\d+$/.test(verseNum)) {
+              log("Sequential analysis: Found superscript verse number: " + verseNum + " in chapter " + currentChapter);
+              
+              // Find which page this character is on
+              try {
+                if (character.parentTextFrames.length > 0) {
+                  var charFrame = character.parentTextFrames[0];
+                  if (charFrame && charFrame.parentPage) {
+                    var pageIndex = charFrame.parentPage.documentOffset;
+                    
+                    if (!pageVerseMap[pageIndex]) {
+                      pageVerseMap[pageIndex] = {verses: [], firstVerse: null, lastVerse: null};
+                    }
+                    
+                    var verseRef = {
+                      book: currentBook,
+                      chapter: currentChapter,
+                      verse: verseNum
+                    };
+                    
+                    pageVerseMap[pageIndex].verses.push(verseRef);
+                    if (!pageVerseMap[pageIndex].firstVerse) {
+                      pageVerseMap[pageIndex].firstVerse = verseRef;
+                    }
+                    pageVerseMap[pageIndex].lastVerse = verseRef;
+                    
+                    log("Sequential analysis: Added " + formatVerseReference(verseRef) + " to page " + (pageIndex + 1));
+                  }
+                }
+              } catch (e) {
+                // Skip if can't determine page
+              }
+              
+              i = j - 1; // Skip the characters we've already processed
+            }
+          }
+        }
+      } catch (e) {
+        log("Error examining characters in paragraph: " + e);
+      }
+    }
+  }
+}
+
+// Log the final page-to-verse map
+for (var pageIndex in pageVerseMap) {
+  var pageData = pageVerseMap[pageIndex];
+  var verseRefs = [];
+  for (var v = 0; v < pageData.verses.length; v++) {
+    verseRefs.push(formatVerseReference(pageData.verses[v]));
+  }
+  log("Page " + (parseInt(pageIndex) + 1) + " verses: [" + verseRefs.join(", ") + "]");
+  log("  First: " + formatVerseReference(pageData.firstVerse) + ", Last: " + formatVerseReference(pageData.lastVerse));
+}
+
 // === Utility: Frame override logic ===
 function findLabeledFrame(page, label) {
   var items = page.allPageItems;
@@ -482,99 +631,6 @@ function ensureOverriddenLabeledFrame(page, label) {
   return null;
 }
 
-// === Function to find verse reference from text content ===
-function parseVerseReference(content, styleName) {
-  // For BookTitle style, extract book name
-  if (styleName === 'BookTitle') {
-    var bookName = String(content).replace(/\r$/, '').replace(/\n$/, '');
-    return {
-      type: 'book',
-      book: bookName
-    };
-  }
-  
-  // For VerseText styles, parse chapter and verse information
-  if (styleName.indexOf('VerseText') === 0) {
-    // Look for content that starts with a number
-    var match = content.match(/^(\d+)(.*)$/);
-    if (match) {
-      var number = match[1];
-      var restOfContent = match[2];
-      
-      // Check if this looks like a chapter start:
-      // - Should have substantial text after the number
-      // - Usually starts with a space and capital letter
-      // - Should be the start of a story/narrative
-      if (restOfContent.match(/^\s+[A-Z][a-z]/)) {
-        return {
-          type: 'chapter_start',
-          chapter: number,
-          verse: '1'
-        };
-      } else {
-        // This is a regular verse number
-        return {
-          type: 'verse',
-          verse: number
-        };
-      }
-    }
-  }
-  
-  return null;
-}
-
-// === Add running headers with proper verse ranges ===
-// First, build a global context map by walking through all content
-var globalContext = {
-  currentBook: '',
-  currentChapter: '',
-  paragraphMap: [] // Array of {para: paragraph, book: string, chapter: string, verse: string}
-};
-
-// Walk through all BibleBody content to build context
-log("=== Building global context map ===");
-for (var s = 0; s < doc.stories.length; s++) {
-  var story = doc.stories[s];
-  for (var p = 0; p < story.paragraphs.length; p++) {
-    var para = story.paragraphs[p];
-    var styleName = para.appliedParagraphStyle.name;
-    var content = String(para.contents);
-    
-    // Skip empty paragraphs
-    if (!content || content === '' || content === '\r' || content === '\n' || content === '\r\n') {
-      continue;
-    }
-    
-    var ref = parseVerseReference(content, styleName);
-    if (ref) {
-      if (ref.type === 'book') {
-        globalContext.currentBook = ref.book;
-        log("Global context: Set book to " + globalContext.currentBook);
-      } else if (ref.type === 'chapter_start') {
-        globalContext.currentChapter = ref.chapter;
-        log("Global context: Set chapter to " + globalContext.currentChapter);
-        
-        globalContext.paragraphMap.push({
-          para: para,
-          book: globalContext.currentBook,
-          chapter: globalContext.currentChapter,
-          verse: '1'
-        });
-      } else if (ref.type === 'verse') {
-        globalContext.paragraphMap.push({
-          para: para,
-          book: globalContext.currentBook,
-          chapter: globalContext.currentChapter,
-          verse: ref.verse
-        });
-      }
-    }
-  }
-}
-
-log("Built context map with " + globalContext.paragraphMap.length + " verse entries");
-
 // === Function to format verse reference for header ===
 function formatVerseReference(ref) {
   if (!ref) return '';
@@ -588,59 +644,6 @@ function formatVerseReference(ref) {
   return '';
 }
 
-// Function to get verse range for a page using global context
-function getPageVerseRangeFromContext(page) {
-  var firstVerse = null;
-  var lastVerse = null;
-  
-  log("=== Analyzing page " + (page.documentOffset + 1) + " using global context ===");
-  
-  // Find all paragraphs on this page
-  var pageFrames = [];
-  var items = page.allPageItems;
-  for (var i = 0; i < items.length; i++) {
-    if (items[i].constructor.name === 'TextFrame' && items[i].label === 'BibleBody') {
-      pageFrames.push(items[i]);
-    }
-  }
-  
-  // Check each paragraph in our context map to see if it's on this page
-  for (var i = 0; i < globalContext.paragraphMap.length; i++) {
-    var entry = globalContext.paragraphMap[i];
-    var para = entry.para;
-    
-    // Check if this paragraph is on the current page
-    try {
-      if (para.characters.length > 0) {
-        var paraFrame = para.characters[0].parentTextFrames[0];
-        if (paraFrame && paraFrame.parentPage === page) {
-          var verseRef = {
-            book: entry.book,
-            chapter: entry.chapter,
-            verse: entry.verse
-          };
-          
-          if (!firstVerse) {
-            firstVerse = verseRef;
-            log("Found first verse on page: " + formatVerseReference(firstVerse));
-          }
-          lastVerse = verseRef;
-          log("Found verse on page: " + formatVerseReference(lastVerse));
-        }
-      }
-    } catch (e) {
-      // Skip paragraphs that can't be checked
-    }
-  }
-  
-  log("Page analysis complete. First: " + formatVerseReference(firstVerse) + ", Last: " + formatVerseReference(lastVerse));
-  
-  return {
-    first: firstVerse,
-    last: lastVerse
-  };
-}
-
 // Process pages in pairs (spreads) for proper left/right header logic
 for (var p = 0; p < doc.pages.length; p += 2) {
   var leftPage = doc.pages[p];
@@ -648,13 +651,13 @@ for (var p = 0; p < doc.pages.length; p += 2) {
   
   log("=== Processing spread: pages " + (p + 1) + " and " + (rightPage ? (p + 2) : "none") + " ===");
   
-  // Get verse ranges for both pages using global context
-  var leftRange = getPageVerseRangeFromContext(leftPage);
-  var rightRange = rightPage ? getPageVerseRangeFromContext(rightPage) : null;
+  // Get verse ranges from our map
+  var leftPageData = pageVerseMap[p] || {firstVerse: null, lastVerse: null};
+  var rightPageData = rightPage ? (pageVerseMap[p + 1] || {firstVerse: null, lastVerse: null}) : {firstVerse: null, lastVerse: null};
   
   // Determine the spread's verse range
-  var spreadFirstVerse = leftRange.first;
-  var spreadLastVerse = rightRange && rightRange.last ? rightRange.last : leftRange.last;
+  var spreadFirstVerse = leftPageData.firstVerse;
+  var spreadLastVerse = rightPageData.lastVerse || leftPageData.lastVerse;
   
   log("Spread first verse: " + formatVerseReference(spreadFirstVerse));
   log("Spread last verse: " + formatVerseReference(spreadLastVerse));
