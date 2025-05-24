@@ -472,7 +472,7 @@ for (var s = 0; s < doc.stories.length; s++) {
     if (styleName === 'BookTitle') {
       var bookName = content.replace(/\r$/, '').replace(/\n$/, '');
       currentBook = bookName;
-      log("Sequential analysis: Set book to " + currentBook);
+      // log("Sequential analysis: Set book to " + currentBook);
       continue;
     }
     
@@ -492,7 +492,7 @@ for (var s = 0; s < doc.stories.length; s++) {
           if (chapterMatch) {
             chapterNumber = chapterMatch[1];
             isChapterStart = true;
-            log("Sequential analysis: Detected chapter start by drop cap: " + chapterNumber);
+            // log("Sequential analysis: Detected chapter start by drop cap: " + chapterNumber);
           }
         }
       } catch (e) {
@@ -503,13 +503,13 @@ for (var s = 0; s < doc.stories.length; s++) {
         if (chapterMatch && chapterMatch[2].match(chapterStartWords)) {
           chapterNumber = chapterMatch[1];
           isChapterStart = true;
-          log("Sequential analysis: Detected chapter start by text pattern: " + chapterNumber);
+          // log("Sequential analysis: Detected chapter start by text pattern: " + chapterNumber);
         }
       }
       
       if (isChapterStart) {
         currentChapter = chapterNumber;
-        log("Sequential analysis: Set chapter to " + currentChapter);
+        // log("Sequential analysis: Set chapter to " + currentChapter);
         
         // This paragraph contains chapter start (verse 1)
         // Find which page this paragraph is on
@@ -569,7 +569,7 @@ for (var s = 0; s < doc.stories.length; s++) {
             }
             
             if (/^\d+$/.test(verseNum)) {
-              log("Sequential analysis: Found superscript verse number: " + verseNum + " in chapter " + currentChapter);
+              // log("Sequential analysis: Found superscript verse number: " + verseNum + " in chapter " + currentChapter);
               
               // Find which page this character is on
               try {
@@ -594,7 +594,7 @@ for (var s = 0; s < doc.stories.length; s++) {
                     }
                     pageVerseMap[pageIndex].lastVerse = verseRef;
                     
-                    log("Sequential analysis: Added " + formatVerseReference(verseRef) + " to page " + (pageIndex + 1));
+                    // log("Sequential analysis: Added " + formatVerseReference(verseRef) + " to page " + (pageIndex + 1));
                   }
                 }
               } catch (e) {
@@ -678,21 +678,17 @@ for (var p = 0; p < doc.pages.length; p += 2) {
   log("=== Processing spread: pages " + (p + 1) + " and " + (rightPage ? (p + 2) : "none") + " ===");
   
   // Get verse ranges from our map
-  var leftPageData = pageVerseMap[p] || {firstVerse: null, lastVerse: null};
-  var rightPageData = rightPage ? (pageVerseMap[p + 1] || {firstVerse: null, lastVerse: null}) : {firstVerse: null, lastVerse: null};
+  var rightPageData = pageVerseMap[p] || {firstVerse: null, lastVerse: null};
+  var leftPageData = rightPage ? (pageVerseMap[p + 1] || {firstVerse: null, lastVerse: null}) : {firstVerse: null, lastVerse: null};
   
-  // Determine the spread's verse range
-  var spreadFirstVerse = leftPageData.firstVerse;
-  var spreadLastVerse = rightPageData.lastVerse || leftPageData.lastVerse;
+  log("Left page first verse: " + formatVerseReference(rightPageData.firstVerse) + ", last verse: " + formatVerseReference(rightPageData.lastVerse));
+  log("Right page first verse: " + formatVerseReference(leftPageData.firstVerse) + ", last verse: " + formatVerseReference(leftPageData.lastVerse));
   
-  log("Spread first verse: " + formatVerseReference(spreadFirstVerse));
-  log("Spread last verse: " + formatVerseReference(spreadLastVerse));
-  
-  // Set left page header (first verse of spread)
+  // Set left page header (first verse on LEFT page)
   var leftHeaderFrame = ensureOverriddenLabeledFrame(leftPage, 'BibleHeader');
   if (leftHeaderFrame) {
-    if (spreadFirstVerse) {
-      var leftHeaderText = formatVerseReference(spreadFirstVerse);
+    if (rightPageData.lastVerse) {
+      var leftHeaderText = formatVerseReference(rightPageData.lastVerse);
       leftHeaderFrame.contents = leftHeaderText;
       log("Set left header to: '" + leftHeaderText + "'");
     } else {
@@ -702,12 +698,12 @@ for (var p = 0; p < doc.pages.length; p += 2) {
     log("No left header frame found");
   }
   
-  // Set right page header (last verse of spread)
+  // Set right page header (last verse on RIGHT page)
   if (rightPage) {
     var rightHeaderFrame = ensureOverriddenLabeledFrame(rightPage, 'BibleHeader');
     if (rightHeaderFrame) {
-      if (spreadLastVerse) {
-        var rightHeaderText = formatVerseReference(spreadLastVerse);
+      if (leftPageData.firstVerse) {
+        var rightHeaderText = formatVerseReference(leftPageData.firstVerse);
         rightHeaderFrame.contents = rightHeaderText;
         log("Set right header to: '" + rightHeaderText + "'");
       } else {
