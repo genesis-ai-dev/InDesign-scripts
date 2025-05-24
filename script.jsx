@@ -732,4 +732,4 @@ for (var p = 0; p < doc.pages.length; p++) {
 }
 
 // At the end of your script, display the log
-alert(debugLog.join("\n"));
+// alert(debugLog.join("\n"));
