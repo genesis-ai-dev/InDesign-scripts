@@ -13,6 +13,14 @@ if (typeof JSON === 'undefined') {
   JSON.parse = function (s) { return eval('(' + s + ')'); };
 }
 
+// === Debug logging setup ===
+var debugLog = [];
+function log(message) {
+  debugLog.push(message);
+  // Uncomment if using ExtendScript Toolkit
+  // $.writeln(message);
+}
+
 // === Style creators ===
 function defineParagraphStyle(doc, name, settings) {
   var style;
@@ -90,7 +98,10 @@ if (!page) {
 
 // Override BibleHeader frames on all pages
 for (var p = 0; p < doc.pages.length; p++) {
-  ensureOverriddenLabeledFrame(doc.pages[p], 'BibleHeader');
+  var headerFrame = ensureOverriddenLabeledFrame(doc.pages[p], 'BibleHeader');
+  if (headerFrame) {
+    styleHeaderFrame(doc.pages[p], headerFrame);
+  }
 }
 
 // Find the first BibleBody frame on the first page
@@ -200,13 +211,6 @@ var missingFieldCount = 0;
 var malformedChapterVerseCount = 0;
 var errorProcessingCount = 0;
 var successCount = 0;
-
-var debugLog = [];
-function log(message) {
-  debugLog.push(message);
-  // Uncomment if using ExtendScript Toolkit
-  // $.writeln(message);
-}
 
 for (var i = 0; i < data.length; i++) {
   var entry = data[i];
@@ -657,6 +661,92 @@ function ensureOverriddenLabeledFrame(page, label) {
   return null;
 }
 
+// === Header Styling Function ===
+function styleHeaderFrame(page, headerFrame) {
+  try {
+    var isLeft = (page.side && page.side === PageSideOptions.LEFT_HAND);
+    log('=== Styling header on page ' + page.name + ' (isLeft: ' + isLeft + ') ===');
+    log('Header frame has ' + headerFrame.texts.length + ' texts');
+    log('Header frame has ' + headerFrame.paragraphs.length + ' paragraphs');
+    
+    // Check if frame has content
+    if (headerFrame.contents.length === 0) {
+      log('Header frame is empty on page ' + page.name);
+      return;
+    }
+    
+    log('Header frame content: "' + headerFrame.contents + '"');
+    
+    // Apply styling to all text in the frame
+    if (headerFrame.paragraphs.length > 0) {
+      for (var i = 0; i < headerFrame.paragraphs.length; i++) {
+        var paragraph = headerFrame.paragraphs[i];
+        log('Processing paragraph ' + i + ': "' + paragraph.contents + '"');
+        
+        // Apply alignment
+        if (isLeft) {
+          paragraph.justification = Justification.LEFT_ALIGN;
+          log('Applied LEFT alignment to paragraph ' + i + ' on page ' + page.name);
+        } else {
+          paragraph.justification = Justification.RIGHT_ALIGN;
+          log('Applied RIGHT alignment to paragraph ' + i + ' on page ' + page.name);
+        }
+        
+        // Add horizontal rule below the paragraph
+        try {
+          paragraph.ruleBelow = true;
+          paragraph.ruleBelowWeight = "0.5pt";
+          
+          // Try to get black color, fallback if not found
+          try {
+            paragraph.ruleBelowColor = doc.colors.itemByName("Black");
+          } catch (colorError) {
+            try {
+              paragraph.ruleBelowColor = doc.swatches.itemByName("Black");
+            } catch (swatchError) {
+              log('Could not find Black color, using default');
+            }
+          }
+          
+          paragraph.ruleBelowOffset = "2pt";
+          paragraph.ruleBelowLeftIndent = 0;
+          paragraph.ruleBelowRightIndent = 0;
+          paragraph.ruleBelowWidth = RuleWidth.COLUMN_WIDTH;
+          
+          log('Applied horizontal rule below paragraph ' + i + ' on page ' + page.name);
+        } catch (ruleError) {
+          log('Error applying rule to paragraph ' + i + ': ' + ruleError);
+        }
+      }
+    } else {
+      // If no paragraphs, try to style the entire text frame
+      log('No paragraphs found, styling entire text frame');
+      try {
+        if (isLeft) {
+          headerFrame.texts[0].justification = Justification.LEFT_ALIGN;
+          log('Applied LEFT alignment to entire text frame on page ' + page.name);
+        } else {
+          headerFrame.texts[0].justification = Justification.RIGHT_ALIGN;
+          log('Applied RIGHT alignment to entire text frame on page ' + page.name);
+        }
+      } catch (textError) {
+        log('Error styling text frame: ' + textError);
+      }
+    }
+    
+    // Force redraw to make changes visible
+    try {
+      app.activeDocument.recompose();
+      log('Recomposed document to show changes');
+    } catch (recomposeError) {
+      log('Could not recompose document: ' + recomposeError);
+    }
+    
+  } catch (e) {
+    log('Error styling header on page ' + page.name + ': ' + e);
+  }
+}
+
 // === Function to format verse reference for header ===
 function formatVerseReference(ref) {
   if (!ref) return '';
@@ -691,6 +781,8 @@ for (var p = 0; p < doc.pages.length; p += 2) {
       var leftHeaderText = formatVerseReference(rightPageData.lastVerse);
       leftHeaderFrame.contents = leftHeaderText;
       log("Set left header to: '" + leftHeaderText + "'");
+      // Apply styling after setting content
+      styleHeaderFrame(leftPage, leftHeaderFrame);
     } else {
       log("No first verse found for left header");
     }
@@ -706,6 +798,8 @@ for (var p = 0; p < doc.pages.length; p += 2) {
         var rightHeaderText = formatVerseReference(leftPageData.firstVerse);
         rightHeaderFrame.contents = rightHeaderText;
         log("Set right header to: '" + rightHeaderText + "'");
+        // Apply styling after setting content
+        styleHeaderFrame(rightPage, rightHeaderFrame);
       } else {
         log("No last verse found for right header");
       }
@@ -732,4 +826,4 @@ for (var p = 0; p < doc.pages.length; p++) {
 }
 
 // At the end of your script, display the log
-// alert(debugLog.join("\n"));
+alert(debugLog.join("\n"));
