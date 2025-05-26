@@ -695,7 +695,7 @@ function styleHeaderFrame(page, headerFrame) {
         // Add horizontal rule below the paragraph
         try {
           paragraph.ruleBelow = true;
-          paragraph.ruleBelowWeight = "0.5pt";
+          paragraph.ruleBelowWeight = 0.5; // Use numeric value instead of string
           
           // Try to get black color, fallback if not found
           try {
@@ -708,7 +708,7 @@ function styleHeaderFrame(page, headerFrame) {
             }
           }
           
-          paragraph.ruleBelowOffset = "2pt";
+          paragraph.ruleBelowOffset = 2; // Use numeric value instead of string
           paragraph.ruleBelowLeftIndent = 0;
           paragraph.ruleBelowRightIndent = 0;
           paragraph.ruleBelowWidth = RuleWidth.COLUMN_WIDTH;
@@ -744,6 +744,56 @@ function styleHeaderFrame(page, headerFrame) {
     
   } catch (e) {
     log('Error styling header on page ' + page.name + ': ' + e);
+  }
+}
+
+// === Footer Styling Function ===
+function styleFooterFrame(page, footerFrame) {
+  try {
+    var isLeft = (page.side && page.side === PageSideOptions.LEFT_HAND);
+    log('=== Styling footer on page ' + page.name + ' (isLeft: ' + isLeft + ') ===');
+    
+    // Check if frame has content
+    if (footerFrame.contents.length === 0) {
+      log('Footer frame is empty on page ' + page.name);
+      return;
+    }
+    
+    log('Footer frame content: "' + footerFrame.contents + '"');
+    
+    // Apply styling to all text in the frame
+    if (footerFrame.paragraphs.length > 0) {
+      for (var i = 0; i < footerFrame.paragraphs.length; i++) {
+        var paragraph = footerFrame.paragraphs[i];
+        log('Processing footer paragraph ' + i + ': "' + paragraph.contents + '"');
+        
+        // Apply alignment based on page side
+        if (isLeft) {
+          paragraph.justification = Justification.LEFT_ALIGN;
+          log('Applied LEFT alignment to footer paragraph ' + i + ' on page ' + page.name);
+        } else {
+          paragraph.justification = Justification.RIGHT_ALIGN;
+          log('Applied RIGHT alignment to footer paragraph ' + i + ' on page ' + page.name);
+        }
+      }
+    } else {
+      // If no paragraphs, try to style the entire text frame
+      log('No paragraphs found in footer, styling entire text frame');
+      try {
+        if (isLeft) {
+          footerFrame.texts[0].justification = Justification.LEFT_ALIGN;
+          log('Applied LEFT alignment to entire footer text frame on page ' + page.name);
+        } else {
+          footerFrame.texts[0].justification = Justification.RIGHT_ALIGN;
+          log('Applied RIGHT alignment to entire footer text frame on page ' + page.name);
+        }
+      } catch (textError) {
+        log('Error styling footer text frame: ' + textError);
+      }
+    }
+    
+  } catch (e) {
+    log('Error styling footer on page ' + page.name + ': ' + e);
   }
 }
 
@@ -823,6 +873,9 @@ for (var p = 0; p < doc.pages.length; p++) {
 
   // Add the page number to the footer
   footerFrame.contents = String(p + 1); // Adding 1 since pages are 0-indexed
+  
+  // Apply styling to align page numbers properly
+  styleFooterFrame(page, footerFrame);
 }
 
 // At the end of your script, display the log
