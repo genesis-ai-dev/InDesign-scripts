@@ -24,30 +24,58 @@ function log(message) {
 // === Style creators ===
 function defineParagraphStyle(doc, name, settings) {
   var style;
-  // Remove existing style if it exists (except [Basic Paragraph])
+  // Check if style already exists
   try {
     style = doc.paragraphStyles.itemByName(name);
-    if (style.isValid && name !== '[Basic Paragraph]') {
-      style.remove();
+    if (style.isValid) {
+      log('Using existing paragraph style: ' + name);
+      return style;
     }
   } catch (e) { }
-  style = doc.paragraphStyles.add({ name: name });
-  for (var key in settings) { style[key] = settings[key]; }
-  return style;
+
+  // Create new style if it doesn't exist
+  try {
+    style = doc.paragraphStyles.add({ name: name });
+    for (var key in settings) { style[key] = settings[key]; }
+    log('Created new paragraph style: ' + name);
+    return style;
+  } catch (e) {
+    log('Error creating paragraph style ' + name + ': ' + e);
+    // Return a fallback style if creation fails
+    try {
+      return doc.paragraphStyles.itemByName('[Basic Paragraph]');
+    } catch (fallbackError) {
+      throw new Error('Could not create or find fallback paragraph style');
+    }
+  }
 }
 
 function defineCharacterStyle(doc, name, settings) {
   var style;
-  // Remove existing style if it exists (except [None])
+  // Check if style already exists
   try {
     style = doc.characterStyles.itemByName(name);
-    if (style.isValid && name !== '[None]') {
-      style.remove();
+    if (style.isValid) {
+      log('Using existing character style: ' + name);
+      return style;
     }
   } catch (e) { }
-  style = doc.characterStyles.add({ name: name });
-  for (var key in settings) { style[key] = settings[key]; }
-  return style;
+
+  // Create new style if it doesn't exist
+  try {
+    style = doc.characterStyles.add({ name: name });
+    for (var key in settings) { style[key] = settings[key]; }
+    log('Created new character style: ' + name);
+    return style;
+  } catch (e) {
+    log('Error creating character style ' + name + ': ' + e);
+    // Return a fallback style if creation fails
+    try {
+      return doc.characterStyles.itemByName('[None]');
+    } catch (fallbackError) {
+      throw new Error('Could not create or find fallback character style');
+    }
+  }
 }
 
 // === Load JSON file ===
@@ -73,6 +101,41 @@ alert('Loaded ' + data.length + ' entries');
 // === Prepare document ===
 var doc = app.activeDocument;
 
+// Clear all a-master pages (preserve b-master pages)
+log("=== Clearing a-master pages ===");
+var pagesToRemove = [];
+
+// First, collect all a-master pages (we'll remove them after collecting to avoid index issues)
+for (var pageIndex = 0; pageIndex < doc.pages.length; pageIndex++) {
+  var page = doc.pages[pageIndex];
+  try {
+    var masterName = page.appliedMaster ? page.appliedMaster.name : 'None';
+    log('Page ' + (pageIndex + 1) + ' uses master: ' + masterName);
+
+    // Check if this page uses a-master (could be "A-Master" or similar)
+    if (masterName && masterName.toLowerCase().indexOf('a-') === 0) {
+      pagesToRemove.push(page);
+      log('Marked page ' + (pageIndex + 1) + ' for removal (a-master)');
+    }
+  } catch (e) {
+    log('Error checking master for page ' + (pageIndex + 1) + ': ' + e);
+  }
+}
+
+// Remove the a-master pages (in reverse order to avoid index shifting)
+for (var i = pagesToRemove.length - 1; i >= 0; i--) {
+  try {
+    var pageNum = pagesToRemove[i].name;
+    pagesToRemove[i].remove();
+    log('Removed a-master page: ' + pageNum);
+  } catch (e) {
+    log('Error removing page: ' + e);
+  }
+}
+
+log('Removed ' + pagesToRemove.length + ' a-master pages');
+log('Remaining pages: ' + doc.pages.length);
+
 // Ensure [Basic Paragraph] does not align to baseline grid
 try {
   var basicParagraphStyle = doc.paragraphStyles.itemByName('[Basic Paragraph]');
@@ -81,52 +144,121 @@ try {
   }
 } catch (e) { }
 
-// Target the first page and first BibleBody frame
-var page = doc.pages[0];
-if (!page) {
-  alert('No pages found in document.');
-  exit();
-}
-
-// === OVERRIDE FRAMES FIRST TO ENSURE BIBLEBODY EXISTS ===
-// (function () {
-//   var LABELS = ['BibleBody', 'BibleHeader'];
-//   for (var l = 0; l < LABELS.length; l++) {
-//     ensureOverriddenLabeledFrame(page, LABELS[l]);
-//   }
-// })();
-
-// Override BibleHeader frames on all pages
-for (var p = 0; p < doc.pages.length; p++) {
-  var headerFrame = ensureOverriddenLabeledFrame(doc.pages[p], 'BibleHeader');
-  if (headerFrame) {
-    styleHeaderFrame(doc.pages[p], headerFrame);
-  }
-}
-
-// Find the first BibleBody frame on the first page
+// Find the first page that has a BibleBody frame AND is not a B-master page
+var page = null;
 var textFrame = null;
-var items = page.allPageItems;
-for (var i = 0; i < items.length; i++) {
-  var tf = items[i];
-  if (tf.constructor && tf.constructor.name === 'TextFrame' && tf.label === 'BibleBody') {
-    textFrame = tf;
-    break;
+
+for (var pageIndex = 0; pageIndex < doc.pages.length; pageIndex++) {
+  var currentPage = doc.pages[pageIndex];
+
+  // Check what master this page uses
+  var masterName = 'None';
+  try {
+    masterName = currentPage.appliedMaster ? currentPage.appliedMaster.name : 'None';
+  } catch (e) {
+    log('Error checking master for page ' + (pageIndex + 1) + ': ' + e);
+  }
+
+  log('Checking page ' + (pageIndex + 1) + ' (master: ' + masterName + ')');
+
+  // Skip B-master pages - we want to preserve these
+  if (masterName && masterName.toLowerCase().indexOf('b-') === 0) {
+    log('Skipping B-master page ' + (pageIndex + 1));
+    continue;
+  }
+
+  // Look for BibleBody frame on non-B-master pages
+  var items = currentPage.allPageItems;
+  for (var i = 0; i < items.length; i++) {
+    var tf = items[i];
+    if (tf.constructor && tf.constructor.name === 'TextFrame' && tf.label === 'BibleBody') {
+      page = currentPage;
+      textFrame = tf;
+      log('Found first BibleBody frame on page ' + (pageIndex + 1) + ' (master: ' + masterName + ')');
+      break;
+    }
+  }
+
+  if (page && textFrame) {
+    break; // Found what we need, stop looking
   }
 }
 
-if (!textFrame) {
-  alert('No BibleBody frame found on the first page. Make sure your master page has a frame labeled BibleBody.');
-  exit();
+// If no BibleBody frame found on non-B-master pages, we need to create some A-master pages
+if (!page || !textFrame) {
+  log('No BibleBody frame found on non-B-master pages. Creating A-master pages...');
+
+  // Find or create an A-master
+  var aMaster = null;
+  try {
+    // Try to find existing A-master
+    for (var m = 0; m < doc.masterSpreads.length; m++) {
+      var master = doc.masterSpreads[m];
+      if (master.name.toLowerCase().indexOf('a-') === 0) {
+        aMaster = master;
+        log('Found existing A-master: ' + master.name);
+        break;
+      }
+    }
+
+    // If no A-master found, create one
+    if (!aMaster) {
+      aMaster = doc.masterSpreads.add();
+      aMaster.name = 'A-Master';
+      log('Created new A-master');
+    }
+
+    // Create a new page using the A-master
+    page = doc.pages.add(LocationOptions.AFTER, doc.pages[-1]);
+    page.appliedMaster = aMaster;
+
+    // Find or create BibleBody frame on the new page
+    textFrame = ensureOverriddenLabeledFrame(page, 'BibleBody');
+
+    if (!textFrame) {
+      alert('Could not find or create BibleBody frame. Please ensure your master page template has a BibleBody frame.');
+      exit();
+    }
+
+    log('Created new A-master page with BibleBody frame');
+
+  } catch (e) {
+    alert('Error creating A-master page: ' + e);
+    exit();
+  }
 }
 
 // Set the text frame to 2 columns (if needed)
 textFrame.textFramePreferences.textColumnCount = 2;
 
-// Clear existing content
+// Clear existing content ONLY from the BibleBody story (preserve other content)
 if (textFrame.parentStory) {
-  textFrame.parentStory.contents = '';
+  // Only clear if this story is actually connected to BibleBody frames
+  // This ensures we don't accidentally clear content from other stories
   var story = textFrame.parentStory;
+
+  // Verify this story only contains BibleBody frames
+  var storyFrames = story.textFrames;
+  var allFramesAreBibleBody = true;
+
+  for (var frameIndex = 0; frameIndex < storyFrames.length; frameIndex++) {
+    if (storyFrames[frameIndex].label !== 'BibleBody') {
+      allFramesAreBibleBody = false;
+      break;
+    }
+  }
+
+  if (allFramesAreBibleBody) {
+    story.contents = '';
+    log('Cleared content from BibleBody story (' + storyFrames.length + ' frames)');
+  } else {
+    log('WARNING: Story contains non-BibleBody frames - preserving existing content');
+    // Create a new story by breaking the link and creating fresh content
+    textFrame.nextTextFrame = null;
+    textFrame.contents = '';
+    story = textFrame.parentStory;
+    log('Created fresh content in BibleBody frame while preserving other stories');
+  }
 } else {
   alert('BibleBody frame is not connected to a story');
   exit();
@@ -218,21 +350,33 @@ for (var i = 0; i < data.length; i++) {
     missingFieldCount++;
     continue;
   }
-  // Handle multi-word book names (e.g., "1 Corinthians", "3 John")
+  // Handle multi-word book names (e.g., "1 Corinthians", "3 John", "Song of Solomon")
   var idParts = entry.id.split(' ');
   if (idParts.length < 2) {
     malformedIdCount++;
     continue;
   }
-  // Check if first part is a number (e.g., "1", "3")
-  var book = idParts[0];
-  if (!isNaN(parseInt(book))) {
-    // If it is, combine with next word for book name
-    book = book + ' ' + idParts[1];
-    // Remove the second word from idParts since we've used it
-    idParts.splice(1, 1);
+
+  // Find the last part that contains a colon (chapter:verse)
+  var chapterVerseIndex = -1;
+  for (var j = idParts.length - 1; j >= 0; j--) {
+    if (idParts[j].indexOf(':') !== -1) {
+      chapterVerseIndex = j;
+      break;
+    }
   }
-  var chapterVerse = idParts[1].split(':');
+
+  if (chapterVerseIndex === -1) {
+    malformedIdCount++;
+    continue;
+  }
+
+  // Everything before the chapter:verse part is the book name
+  var bookParts = idParts.slice(0, chapterVerseIndex);
+  var book = bookParts.join(' ');
+
+  // Parse chapter and verse
+  var chapterVerse = idParts[chapterVerseIndex].split(':');
   if (chapterVerse.length < 2) {
     malformedChapterVerseCount++;
     continue;
@@ -280,7 +424,7 @@ for (var i = 0; i < data.length; i++) {
     para.characters.itemByRange(0, chapter.length - 1).appliedCharacterStyle = dropCapStyle;
     // Add extra space before the drop cap paragraph to prevent collision with the line above
     para.spaceBefore = 10; // Adjust this value as needed
-    
+
 
     prevChapter = chapter;
   }
@@ -304,7 +448,7 @@ for (var i = 0; i < data.length; i++) {
             story.characters[verseStartIndex],
             story.characters[verseStartIndex + verseLength - 1]
           ).appliedCharacterStyle = verseNumStyle;
-        } 
+        }
       }
     }
 
@@ -365,24 +509,75 @@ for (var i = 0; i < data.length; i++) {
 }
 
 // === Link all BibleBody frames in order ===
-var frames = [];
+var frames = []; // Ensure frames is initialized as an array
+log('=== Collecting BibleBody frames for linking ===');
+
 for (var p = 0; p < doc.pages.length; p++) {
   var page = doc.pages[p];
   var items = page.allPageItems;
   for (var i = 0; i < items.length; i++) {
     var tf = items[i];
     if (tf.constructor && tf.constructor.name === 'TextFrame' && tf.label === 'BibleBody') {
-      frames.push(tf);
+      // Validate that this is actually a TextFrame object that can be linked
+      try {
+        // Test if we can access text frame properties
+        var testAccess = tf.parentStory;
+        frames.push(tf);
+        log('Added frame from page ' + (p + 1) + ' to frames array');
+      } catch (e) {
+        log('Skipping invalid frame on page ' + (p + 1) + ': ' + e);
+      }
     }
   }
 }
-if (frames.length > 0 && frames[0] !== textFrame) {
-  frames = frames.filter(function (frame) { return frame !== textFrame; });
-  frames.unshift(textFrame);
+
+log('Collected ' + frames.length + ' BibleBody frames');
+
+// Ensure frames is still an array before using array methods
+if (!frames || !Array.isArray || !Array.isArray(frames)) {
+  log('WARNING: frames is not an array, reinitializing');
+  frames = [];
 }
+
+// Ensure our starting textFrame is first in the array
+if (frames.length > 0 && textFrame && frames[0] !== textFrame) {
+  try {
+    frames = frames.filter(function (frame) { return frame !== textFrame; });
+    frames.unshift(textFrame);
+    log('Moved textFrame to front of frames array');
+  } catch (e) {
+    log('Error reordering frames array: ' + e);
+    // Fallback: create new array with textFrame first
+    var newFrames = [textFrame];
+    for (var i = 0; i < frames.length; i++) {
+      if (frames[i] !== textFrame) {
+        newFrames.push(frames[i]);
+      }
+    }
+    frames = newFrames;
+    log('Rebuilt frames array with textFrame first');
+  }
+}
+
+// Link frames with validation
 for (var i = 0; i < frames.length - 1; i++) {
-  if (frames[i].nextTextFrame !== frames[i + 1]) {
-    frames[i].nextTextFrame = frames[i + 1];
+  try {
+    // Validate both frames before attempting to link
+    if (frames[i] && frames[i + 1] &&
+      frames[i].constructor && frames[i].constructor.name === 'TextFrame' &&
+      frames[i + 1].constructor && frames[i + 1].constructor.name === 'TextFrame') {
+
+      // Only link if not already linked
+      if (frames[i].nextTextFrame !== frames[i + 1]) {
+        frames[i].nextTextFrame = frames[i + 1];
+        log('Linked frame ' + i + ' to frame ' + (i + 1));
+      }
+    } else {
+      log('Skipping invalid frame link: frame ' + i + ' or ' + (i + 1) + ' is not valid');
+    }
+  } catch (e) {
+    log('Error linking frame ' + i + ' to frame ' + (i + 1) + ': ' + e);
+    // Continue with the next frame rather than stopping the entire script
   }
 }
 
@@ -395,52 +590,52 @@ var pagesAdded = 0;
 while (pagesAdded < maxNewPages) {
   // Force recomposition to correctly detect overflow
   app.activeDocument.recompose();
-  
+
   // Check if we still have overflow
   if (!lastFrame.overflows) {
     log("All content fits - no more pages needed");
     break;
   }
-  
+
   log("Content overflow detected - creating new spread");
-  
+
   // Create two new pages (a spread) at the end of the document
   var leftPage = doc.pages.add(LocationOptions.AFTER, doc.pages[-1]);
   var rightPage = doc.pages.add(LocationOptions.AFTER, leftPage);
   pagesAdded += 2;
-  
+
   // Override BibleBody frame on left page
   var leftFrame = ensureOverriddenLabeledFrame(leftPage, 'BibleBody');
   if (!leftFrame) {
     log("Failed to create BibleBody frame on left page");
     break;
   }
-  
+
   // Override BibleHeader frame on left page
   ensureOverriddenLabeledFrame(leftPage, 'BibleHeader');
-  
+
   // Connect the previous last frame to the new left frame
   lastFrame.nextTextFrame = leftFrame;
-  
+
   // Override BibleBody frame on right page
   var rightFrame = ensureOverriddenLabeledFrame(rightPage, 'BibleBody');
   if (!rightFrame) {
     log("Failed to create BibleBody frame on right page");
     break;
   }
-  
+
   // Override BibleHeader frame on right page
   ensureOverriddenLabeledFrame(rightPage, 'BibleHeader');
-  
+
   // Override BibleFooter frame on right page
   ensureOverriddenLabeledFrame(rightPage, 'BibleFooter');
-  
+
   // Connect left frame to right frame
   leftFrame.nextTextFrame = rightFrame;
-  
+
   // Update lastFrame for next iteration
   lastFrame = rightFrame;
-  
+
   // Add the new frames to our frames array
   frames.push(leftFrame);
   frames.push(rightFrame);
@@ -451,6 +646,8 @@ if (pagesAdded >= maxNewPages) {
 }
 
 // === Add running headers with proper verse ranges ===
+// NOTE: Headers and footers are now calculated in calculate-headers-footers.jsx
+/*
 // Walk through all content sequentially to build a page-to-verse map with proper context
 var pageVerseMap = {}; // pageIndex -> {verses: [{book, chapter, verse}], firstVerse, lastVerse}
 var currentBook = '';
@@ -626,6 +823,7 @@ for (var pageIndex in pageVerseMap) {
   log("Page " + (parseInt(pageIndex) + 1) + " verses: [" + verseRefs.join(", ") + "]");
   log("  First: " + formatVerseReference(pageData.firstVerse) + ", Last: " + formatVerseReference(pageData.lastVerse));
 }
+*/
 
 // === Utility: Frame override logic ===
 function findLabeledFrame(page, label) {
@@ -668,21 +866,21 @@ function styleHeaderFrame(page, headerFrame) {
     log('=== Styling header on page ' + page.name + ' (isLeft: ' + isLeft + ') ===');
     log('Header frame has ' + headerFrame.texts.length + ' texts');
     log('Header frame has ' + headerFrame.paragraphs.length + ' paragraphs');
-    
+
     // Check if frame has content
     if (headerFrame.contents.length === 0) {
       log('Header frame is empty on page ' + page.name);
       return;
     }
-    
+
     log('Header frame content: "' + headerFrame.contents + '"');
-    
+
     // Apply styling to all text in the frame
     if (headerFrame.paragraphs.length > 0) {
       for (var i = 0; i < headerFrame.paragraphs.length; i++) {
         var paragraph = headerFrame.paragraphs[i];
         log('Processing paragraph ' + i + ': "' + paragraph.contents + '"');
-        
+
         // Apply alignment
         if (isLeft) {
           paragraph.justification = Justification.LEFT_ALIGN;
@@ -691,12 +889,12 @@ function styleHeaderFrame(page, headerFrame) {
           paragraph.justification = Justification.RIGHT_ALIGN;
           log('Applied RIGHT alignment to paragraph ' + i + ' on page ' + page.name);
         }
-        
+
         // Add horizontal rule below the paragraph
         try {
           paragraph.ruleBelow = true;
           paragraph.ruleBelowWeight = 0.5; // Use numeric value instead of string
-          
+
           // Try to get black color, fallback if not found
           try {
             paragraph.ruleBelowColor = doc.colors.itemByName("Black");
@@ -707,12 +905,12 @@ function styleHeaderFrame(page, headerFrame) {
               log('Could not find Black color, using default');
             }
           }
-          
+
           paragraph.ruleBelowOffset = 2; // Use numeric value instead of string
           paragraph.ruleBelowLeftIndent = 0;
           paragraph.ruleBelowRightIndent = 0;
           paragraph.ruleBelowWidth = RuleWidth.COLUMN_WIDTH;
-          
+
           log('Applied horizontal rule below paragraph ' + i + ' on page ' + page.name);
         } catch (ruleError) {
           log('Error applying rule to paragraph ' + i + ': ' + ruleError);
@@ -733,7 +931,7 @@ function styleHeaderFrame(page, headerFrame) {
         log('Error styling text frame: ' + textError);
       }
     }
-    
+
     // Force redraw to make changes visible
     try {
       app.activeDocument.recompose();
@@ -741,7 +939,7 @@ function styleHeaderFrame(page, headerFrame) {
     } catch (recomposeError) {
       log('Could not recompose document: ' + recomposeError);
     }
-    
+
   } catch (e) {
     log('Error styling header on page ' + page.name + ': ' + e);
   }
@@ -752,21 +950,21 @@ function styleFooterFrame(page, footerFrame) {
   try {
     var isLeft = (page.side && page.side === PageSideOptions.LEFT_HAND);
     log('=== Styling footer on page ' + page.name + ' (isLeft: ' + isLeft + ') ===');
-    
+
     // Check if frame has content
     if (footerFrame.contents.length === 0) {
       log('Footer frame is empty on page ' + page.name);
       return;
     }
-    
+
     log('Footer frame content: "' + footerFrame.contents + '"');
-    
+
     // Apply styling to all text in the frame
     if (footerFrame.paragraphs.length > 0) {
       for (var i = 0; i < footerFrame.paragraphs.length; i++) {
         var paragraph = footerFrame.paragraphs[i];
         log('Processing footer paragraph ' + i + ': "' + paragraph.contents + '"');
-        
+
         // Apply alignment based on page side
         if (isLeft) {
           paragraph.justification = Justification.LEFT_ALIGN;
@@ -791,13 +989,14 @@ function styleFooterFrame(page, footerFrame) {
         log('Error styling footer text frame: ' + textError);
       }
     }
-    
+
   } catch (e) {
     log('Error styling footer on page ' + page.name + ': ' + e);
   }
 }
 
 // === Function to format verse reference for header ===
+/*
 function formatVerseReference(ref) {
   if (!ref) return '';
   if (ref.book && ref.chapter && ref.verse) {
@@ -814,16 +1013,16 @@ function formatVerseReference(ref) {
 for (var p = 0; p < doc.pages.length; p += 2) {
   var leftPage = doc.pages[p];
   var rightPage = (p + 1 < doc.pages.length) ? doc.pages[p + 1] : null;
-  
+
   log("=== Processing spread: pages " + (p + 1) + " and " + (rightPage ? (p + 2) : "none") + " ===");
-  
+
   // Get verse ranges from our map
   var rightPageData = pageVerseMap[p] || {firstVerse: null, lastVerse: null};
   var leftPageData = rightPage ? (pageVerseMap[p + 1] || {firstVerse: null, lastVerse: null}) : {firstVerse: null, lastVerse: null};
-  
+
   log("Left page first verse: " + formatVerseReference(rightPageData.firstVerse) + ", last verse: " + formatVerseReference(rightPageData.lastVerse));
   log("Right page first verse: " + formatVerseReference(leftPageData.firstVerse) + ", last verse: " + formatVerseReference(leftPageData.lastVerse));
-  
+
   // Set left page header (first verse on LEFT page)
   var leftHeaderFrame = ensureOverriddenLabeledFrame(leftPage, 'BibleHeader');
   if (leftHeaderFrame) {
@@ -839,7 +1038,7 @@ for (var p = 0; p < doc.pages.length; p += 2) {
   } else {
     log("No left header frame found");
   }
-  
+
   // Set right page header (last verse on RIGHT page)
   if (rightPage) {
     var rightHeaderFrame = ensureOverriddenLabeledFrame(rightPage, 'BibleHeader');
@@ -862,10 +1061,10 @@ for (var p = 0; p < doc.pages.length; p += 2) {
 // === Add page numbers to BibleFooter frames ===
 for (var p = 0; p < doc.pages.length; p++) {
   var page = doc.pages[p];
-  
+
   // Ensure the BibleFooter frame is overridden
   var footerFrame = ensureOverriddenLabeledFrame(page, 'BibleFooter');
-  
+
   if (!footerFrame) {
     log("No BibleFooter frame found on page " + (p+1));
     continue;
@@ -873,10 +1072,11 @@ for (var p = 0; p < doc.pages.length; p++) {
 
   // Add the page number to the footer
   footerFrame.contents = String(p + 1); // Adding 1 since pages are 0-indexed
-  
+
   // Apply styling to align page numbers properly
   styleFooterFrame(page, footerFrame);
 }
+*/
 
 // At the end of your script, display the log
-alert(debugLog.join("\n"));
+// alert(debugLog.join("\n"));
